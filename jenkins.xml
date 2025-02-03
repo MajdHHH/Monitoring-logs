@@ -1,0 +1,60 @@
+pipeline {
+    agent any
+
+    environment {
+        // Credentials for GitHub and Linux server
+        GITHUB_CREDENTIALS = credentials('github-jenkins-token') // Credentials for GitHub
+        SERVER_CREDENTIALS = credentials('linux-server-credentials') // Credentials for SSH access to the server
+    }
+
+    stages {
+        stage('Clone Git Repository') {
+            steps {
+                echo 'Cloning the Git repository containing Monitoring-logs.py'
+                git credentialsId: "${GITHUB_CREDENTIALS}", url: 'https://github.com/MajdHHH/Monitoring-logs.git', branch: 'main'
+            }
+        }
+
+        stage('Build Docker Image') {
+            steps {
+                echo 'Building the Docker image for Monitoring-logs.py'
+
+                // Create a Dockerfile and build the image
+                script {
+                    sh '''
+                    echo -e "FROM python:3.9-slim\n\
+                    WORKDIR /app\n\
+                    COPY . /app\n\
+                    RUN pip install -r requirements.txt\n\
+                    CMD [\"python\", \"Monitoring-logs.py\"]" > Dockerfile
+                    
+                    docker build -t monitoring-logs .
+                    '''
+                }
+            }
+        }
+
+        stage('Deploy to Server') {
+            steps {
+                withCredentials([usernamePassword(credentialsId: "${SERVER_CREDENTIALS}", usernameVariable: 'SSH_USER', passwordVariable: 'SSH_PASS')]) {
+                    script {
+                        // Deploy the Docker image to the Linux server (192.168.1.134) and run it
+                        sh '''
+                        # SSH into the server and run the Docker container
+                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no $SSH_USER@192.168.1.134 "docker pull monitoring-logs || true"
+                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no $SSH_USER@192.168.1.134 "docker run -d --name monitoring-logs-container monitoring-logs"
+                        '''
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            script {
+                cleanWs()  // Clean the workspace after the job completes
+            }
+        }
+    }
+}
