@@ -19,17 +19,9 @@ pipeline {
             steps {
                 echo 'Building the Docker image for Monitoring-logs.py'
 
-                // Create a Dockerfile and build the image
                 script {
-                    sh '''
-                    echo -e "FROM python:3.9-slim\n\
-                    WORKDIR /app\n\
-                    COPY . /app\n\
-                    RUN pip install -r requirements.txt\n\
-                    CMD [\"python\", \"Monitoring-logs.py\"]" > Dockerfile
-                    
-                    docker build -t monitoring-logs .
-                    '''
+                    // Build the Docker image from the Dockerfile in the repository
+                    sh 'docker build -t monitoring-logs .'
                 }
             }
         }
@@ -41,7 +33,7 @@ pipeline {
                         // Deploy the Docker image to the Linux server (192.168.1.134) and run it
                         sh '''
                         # SSH into the server and run the Docker container
-                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no $SSH_USER@192.168.1.134 "docker pull monitoring-logs || true"
+                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no $SSH_USER@192.168.1.134 "docker ps -q -f name=monitoring-logs-container | xargs -r docker stop | xargs -r docker rm"
                         sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no $SSH_USER@192.168.1.134 "docker run -d --name monitoring-logs-container monitoring-logs"
                         '''
                     }
