@@ -15,4 +15,4 @@ RUN pip install --no-cache-dir psutil
 RUN mkdir -p /app/logs
 
 # Run Monitoring-logs.py when the container launches
-CMD ["python", "Monitoring-logs.py"]
+CMD ["python3", "Monitoring-logs.py"]
