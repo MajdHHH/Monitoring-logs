@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        // Credentials for GitHub and Linux server
-        GITHUB_CREDENTIALS = credentials('github-jenkins-token') // Credentials for GitHub
-        SERVER_CREDENTIALS = credentials('linux-server-credentials') // Credentials for SSH access to the server
+        GITHUB_CREDENTIALS = credentials('github-jenkins-token')
+        SERVER_CREDENTIALS = credentials('linux-server-credentials')
+        IMAGE_PATH = "/var/lib/jenkins/images/monitoring-logs.tar"
     }
 
     stages {
@@ -15,26 +15,40 @@ pipeline {
             }
         }
 
+        stage('Verify Docker Installation') {
+            steps {
+                echo 'Verifying Docker installation'
+                sh 'docker --version'
+            }
+        }
+
         stage('Build Docker Image') {
             steps {
                 echo 'Building the Docker image for Monitoring-logs.py'
-
                 script {
-                    // Build the Docker image from the Dockerfile in the repository
-                    sh 'docker build -t monitoring-logs .'
+                    sh '''
+                    echo FROM python:3.9-slim > Dockerfile
+                    echo WORKDIR /app >> Dockerfile
+                    echo COPY . /app >> Dockerfile
+                    echo RUN pip install -r requirements.txt >> Dockerfile
+                    echo CMD ["python3", "Monitoring-logs.py"] >> Dockerfile
+
+                    docker build -t monitoring-logs .
+                    mkdir -p /var/lib/jenkins/images
+                    docker save -o /var/lib/jenkins/images/monitoring-logs.tar monitoring-logs
+                    '''
                 }
             }
         }
 
         stage('Deploy to Server') {
             steps {
-                withCredentials([usernamePassword(credentialsId: "${SERVER_CREDENTIALS}", usernameVariable: 'SSH_USER', passwordVariable: 'SSH_PASS')]) {
+                withCredentials([usernamePassword(credentialsId: 'linux-server-credentials', usernameVariable: 'SSH_USER', passwordVariable: 'SSH_PASS')]) {
                     script {
-                        // Deploy the Docker image to the Linux server (192.168.1.134) and run it
                         sh '''
-                        # SSH into the server and run the Docker container
-                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no $SSH_USER@192.168.1.134 "docker ps -q -f name=monitoring-logs-container | xargs -r docker stop | xargs -r docker rm"
-                        sshpass -p "$SSH_PASS" ssh -o StrictHostKeyChecking=no $SSH_USER@192.168.1.134 "docker run -d --name monitoring-logs-container monitoring-logs"
+                        sshpass -p "${SSH_PASS}" scp -o StrictHostKeyChecking=no /var/lib/jenkins/images/monitoring-logs.tar ${SSH_USER}@192.168.1.134:/root/images/
+                        sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no ${SSH_USER}@192.168.1.134 "docker load -i /root/images/monitoring-logs.tar"
+                        sshpass -p "${SSH_PASS}" ssh -o StrictHostKeyChecking=no ${SSH_USER}@192.168.1.134 "docker run -d --name monitoring-logs-container monitoring-logs"
                         '''
                     }
                 }
@@ -45,7 +59,7 @@ pipeline {
     post {
         always {
             script {
-                cleanWs()  // Clean the workspace after the job completes
+                cleanWs()
             }
         }
     }
